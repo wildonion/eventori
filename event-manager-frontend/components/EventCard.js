@@ -1,8 +1,28 @@
 // components/EventCard.js
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 
 const EventCard = ({ event, isLoggedIn, isRegistered, onJoin, onLeave, onDelete, onUpdate, onLock, onUnlock, onVerify, isEventManager, isAdmin, userId }) => {
     const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [comments, setComments] = useState([]);
+    const [newComment, setNewComment] = useState('');
+    const [votes, setVotes] = useState(0);
+    const [userVote, setUserVote] = useState(null); // null means no vote, 1 means upvoted, -1 means downvoted
+
+    useEffect(() => {
+        // Fetch comments
+        axios.get(`http://localhost:3001/api/events/${event.id}/comments`)
+            .then(response => setComments(response.data))
+            .catch(error => console.error('Error fetching comments:', error));
+
+        // Fetch votes and user vote status
+        axios.get(`http://localhost:3001/api/events/${event.id}/votes`, { params: { userId } })
+            .then(response => {
+                setVotes(response.data.votes);
+                setUserVote(response.data.userVote); // response should include whether the user has voted
+            })
+            .catch(error => console.error('Error fetching votes:', error));
+    }, [event.id, userId]);
 
     const handleDelete = () => {
         if (window.confirm("Are you sure you want to delete this event?")) {
@@ -18,6 +38,26 @@ const EventCard = ({ event, isLoggedIn, isRegistered, onJoin, onLeave, onDelete,
         if (window.confirm(`Are you sure you want to ${event.is_locked ? 'unlock' : 'lock'} this event?`)) {
             event.is_locked ? onUnlock() : onLock();
         }
+    };
+
+    const handleAddComment = () => {
+        axios.post(`http://localhost:3001/api/events/${event.id}/comments`, { userId, comment: newComment })
+            .then(response => {
+                setComments([...comments, response.data]);
+                setNewComment('');
+            })
+            .catch(error => console.error('Error adding comment:', error));
+    };
+
+    const handleVote = (vote) => {
+        if (userVote === vote) return; // Prevent voting again with the same vote
+
+        axios.post(`http://localhost:3001/api/events/${event.id}/votes`, { userId, vote })
+            .then(response => {
+                setVotes(votes + (vote - (userVote || 0))); // Adjust the total votes based on the new vote
+                setUserVote(vote); // Set the user's vote
+            })
+            .catch(error => console.error('Error adding vote:', error));
     };
 
     return (
@@ -53,6 +93,32 @@ const EventCard = ({ event, isLoggedIn, isRegistered, onJoin, onLeave, onDelete,
             )}
             {isAdmin && !event.is_verified && (
                 <button onClick={onVerify} className="verify-button">Verify Event</button>
+            )}
+            {event.is_finished && (
+                <div>
+                    <h3>Comments</h3>
+                    {comments.map(comment => (
+                        <p key={comment.id}><strong>{comment.user_id}</strong>: {comment.comment}</p>
+                    ))}
+                    {isLoggedIn && (
+                        <div>
+                            <input
+                                type="text"
+                                value={newComment}
+                                onChange={(e) => setNewComment(e.target.value)}
+                                placeholder="Add a comment"
+                            />
+                            <button onClick={handleAddComment}>Submit</button>
+                        </div>
+                    )}
+                    <h3>Votes: {votes}</h3>
+                    {isLoggedIn && (
+                        <div>
+                            <button onClick={() => handleVote(1)} disabled={userVote === 1}>Upvote</button>
+                            <button onClick={() => handleVote(-1)} disabled={userVote === -1}>Downvote</button>
+                        </div>
+                    )}
+                </div>
             )}
             {showUpdateModal && (
                 <div className="modal">
